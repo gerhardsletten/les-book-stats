@@ -11,11 +11,15 @@ if (!class_exists("LesBookStats")) {
 	class LesBookStats {
 		var $_wpdb;
     var $prefix;
+    var $version;
 		function __construct() {
 			global $wpdb;
 			$this->_wpdb = $wpdb;
+      $this->version = '1.0.0';
       $this->prefix = "les_bookstats_";
+      add_action('admin_enqueue_scripts', array( &$this, "enqueue_ressources" ));
 			add_action( "admin_menu", array( &$this, "create_admin_menu" ) );
+
       $post_type = $this->get_option( 'post_type');
       $tax_author = $this->get_option( 'tax_author');
       if($post_type && $tax_author && function_exists("register_field_group")) {
@@ -23,6 +27,17 @@ if (!class_exists("LesBookStats")) {
         $this->custom_fields(array('field' => $post_type, 'title' => 'Kjønn hovedperson', 'name' => 'sex_main_character'));
       }
 		}
+
+    function enqueue_ressources() {
+      $dev = false;
+      if ($dev) {
+        wp_enqueue_script('les-book-stats', '//0.0.0.0:8082/main.js', array(), $this->version, true);
+      } else {
+        wp_enqueue_script('les-book-stats', plugin_dir_url( __FILE__ ) . 'build/bundle.js', array(), $this->version, true);
+        wp_enqueue_style('les-book-stats', plugin_dir_url( __FILE__ ) . 'build/bundle.css', false, $version);
+      }
+      
+    }
 
 		function create_admin_menu() {
 			add_menu_page( "Bok Statistikk", "Bok Statistikk", "level_10", "book-stats", array( &$this, "main_page" ) );
@@ -40,103 +55,55 @@ if (!class_exists("LesBookStats")) {
           'posts_per_page' => 500,
           'post_type' => $post_type
         ));
+        $general = array('label' => 'Bøker per år', 'stats' => array());
+        $tmp_year = array();
+        $data1 = array('label' => 'Kjønn forfatter','stats' => array());
+        $data2 = array('label' => 'Kjønn hovedperson','stats' => array());
+        $data3 = array('label' => 'Sjanger','stats' => array());
         foreach($posts as $post) {
-          $year = date_i18n('Y', strtotime($post->post_date));
-          if (!$data[$year]) {
-            $data[$year] = array(
-              'books' => 0,
-              'sex_author' => array(
-                'title' => 'Kjønn forfatter',
-                'stats' => array()
-              ),
-              'sex_main_character' => array(
-                'title' => 'Kjønn hovedperson',
-                'stats' => array()
-              ),
-              'genre' => array(
-                'title' => 'Sjanger',
-                'stats' => array()
-              ),
-            );
+          $year = intval(date_i18n('Y', strtotime($post->post_date)));
+          /* Books per year */
+          if (!$tmp_year[$year]) {
+            $tmp_year[$year] = 0;
           }
-          $data[$year]['books']++;
+          $tmp_year[$year]++;
+          /* Sex author */
           $terms = wp_get_post_terms($post->ID,$tax_author);
           if ($terms) {
             foreach($terms as $term) {
               $value = get_field('sex', $tax_author . '_' . $term->term_id);
-              $data[$year]['sex_author']['stats'][] = $value ? $value : 'n/a';
+              $data1['stats'][] = array(
+                'year' => $year,
+                'value' => $value ? $value : 'n/a'
+              );
             }
           }
-          
+          /* Sex main character */
           $sex_character = get_field('sex_main_character', $post->ID);
-          $data[$year]['sex_main_character']['stats'][] = $sex_character ? $sex_character : 'n/a';
-
+          $data2['stats'][] = array(
+            'year' => $year,
+            'value' => $sex_character ? $sex_character : 'n/a'
+          );
+          /* Genre */
           $terms = wp_get_post_terms($post->ID,$tax_genre);
           if ($terms) {
             foreach($terms as $term) {
-              $data[$year]['genre']['stats'][] = $term->name;
+              $data3['stats'][] = array(
+                'year' => $year,
+                'value' => $term->name
+              );
             }
           }
         }
-      }
-      foreach ($data as $key => $value) {
-        $sex = $char = $genre = '';
-        if (count($value['sex_author']['stats']) > 0 ) {
-          $tmp = array();
-          $sex = '<h3>Kjønn forfatter</h3><ul>';
-          foreach($value['sex_author']['stats'] as $stat) {
-            if (!$tmp[$stat]) {
-              $tmp[$stat] = 1;
-            } else {
-              $tmp[$stat]++;
-            }
-          }
-          foreach($tmp as $k => $v) {
-            $sex .= sprintf('<li>%s: %d</li>', $k, $v);
-          }
-          $sex .= '</ul>';
+        foreach($tmp_year as $key => $val) {
+          $general['stats'][] = array(
+            'year' => $key,
+            'value' => $val
+          );
         }
-        if (count($value['sex_main_character']['stats']) > 0 ) {
-          $tmp = array();
-          $char = '<h3>Kjønn hovedperson</h3><ul>';
-          foreach($value['sex_main_character']['stats'] as $stat) {
-            if (!$tmp[$stat]) {
-              $tmp[$stat] = 1;
-            } else {
-              $tmp[$stat]++;
-            }
-          }
-          foreach($tmp as $k => $v) {
-            $char .= sprintf('<li>%s: %d</li>', $k, $v);
-          }
-          $char .= '</ul>';
-        }
-        if (count($value['genre']['stats']) > 0 ) {
-          $tmp = array();
-          $genre = '<h3>Sjanger</h3><ul>';
-          foreach($value['genre']['stats'] as $stat) {
-            if (!$tmp[$stat]) {
-              $tmp[$stat] = 1;
-            } else {
-              $tmp[$stat]++;
-            }
-          }
-          foreach($tmp as $k => $v) {
-            $genre .= sprintf('<li>%s: %d</li>', $k, $v);
-          }
-          $genre .= '</ul>';
-        }
-        $out .= sprintf("
-          <h2>%s (%d stk bøker)</h2>
-          %s
-          %s
-          %s
-          ",
-          $key,
-          $value['books'],
-          $sex,
-          $char,
-          $genre
+        $data = array(
+          'general' => $general,
+          'stats' => array($data1,$data2,$data3)
         );
       }
       
@@ -144,10 +111,13 @@ if (!class_exists("LesBookStats")) {
           <div class='wrap'>
             <h1>Statistikk over bøker</h1>
             <p>Viser sammendrag over forskjellige år</p>
-            %s
+            <div id='les-book-stats-main'></div>
+            <script>
+            var lesBookStats = %s
+            </script>
           </div>
         ",
-        $out
+        json_encode($data)
       );
 		}
 
