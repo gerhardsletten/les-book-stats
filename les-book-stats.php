@@ -17,9 +17,7 @@ if (!class_exists("LesBookStats")) {
 			$this->_wpdb = $wpdb;
       $this->version = '1.0.0';
       $this->prefix = "les_bookstats_";
-      add_action('admin_enqueue_scripts', array( &$this, "enqueue_ressources" ));
 			add_action( "admin_menu", array( &$this, "create_admin_menu" ) );
-
       $post_type = $this->get_option( 'post_type');
       $tax_author = $this->get_option( 'tax_author');
       if($post_type && $tax_author && function_exists("register_field_group")) {
@@ -40,9 +38,14 @@ if (!class_exists("LesBookStats")) {
     }
 
 		function create_admin_menu() {
-			add_menu_page( "Bok Statistikk", "Bok Statistikk", "level_10", "book-stats", array( &$this, "main_page" ) );
+			$my_page = add_menu_page( "Bok Statistikk", "Bok Statistikk", "level_10", "book-stats", array( &$this, "main_page" ) );
       add_submenu_page( "book-stats", "Innstillinger", 'Innstillinger', "level_10", "book-stats-settings", array( &$this, "settings_admin_page" ) );
+      add_action( 'load-' . $my_page, array( &$this, "load_admin_js" ) );
 		}
+
+    function load_admin_js() {
+      add_action('admin_enqueue_scripts', array( &$this, "enqueue_ressources" ));
+    }
 		
 		function main_page() {
       $post_type = $this->get_option( 'post_type');
